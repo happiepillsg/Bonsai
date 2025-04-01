@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Folder, Edit2, Check, X } from 'lucide-react';
+import { Search, Folder, Edit2, Check, X, Plus } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 interface BookmarkNode {
@@ -35,6 +35,8 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [tempCategoryTitle, setTempCategoryTitle] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryTitle, setNewCategoryTitle] = useState('');
 
   useEffect(() => {
     loadBookmarks();
@@ -159,11 +161,58 @@ export function Dashboard() {
     setTempCategoryTitle('');
   };
 
+  const handleAddCategory = () => {
+    setIsAddingCategory(true);
+    setNewCategoryTitle('');
+  };
+
+  const saveNewCategory = () => {
+    if (!newCategoryTitle.trim()) {
+      setIsAddingCategory(false);
+      return;
+    }
+
+    chrome.bookmarks.create({
+      title: newCategoryTitle,
+      parentId: '1' // Creates in the "Bookmarks Bar" folder
+    }, (newFolder) => {
+      if (chrome.runtime.lastError) {
+        setError('Failed to create category: ' + chrome.runtime.lastError.message);
+        return;
+      }
+
+      setCategories([...categories, {
+        id: newFolder.id,
+        title: newFolder.title,
+        bookmarks: []
+      }]);
+      setIsAddingCategory(false);
+      setNewCategoryTitle('');
+    });
+  };
+
+  const cancelAddCategory = () => {
+    setIsAddingCategory(false);
+    setNewCategoryTitle('');
+  };
+
   return (
     <div className="min-h-screen bg-[#0D1117] text-white p-8">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-2xl font-bold">Bookmarks</h1>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <img src="/icons/icon.svg" alt="Bonsai" className="w-8 h-8" />
+              <h1 className="text-2xl font-bold">Bookmarks</h1>
+            </div>
+            <button
+              onClick={handleAddCategory}
+              className="flex items-center gap-2 px-3 py-2 bg-[#238636] hover:bg-[#2ea043] rounded-lg transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Category
+            </button>
+          </div>
           <div className="relative w-96">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
@@ -189,6 +238,34 @@ export function Dashboard() {
         ) : (
           <DragDropContext onDragEnd={handleDragEnd}>
             <div className="space-y-8">
+              {isAddingCategory && (
+                <div className="mb-8 p-4 bg-[#161B22] rounded-lg border border-[#30363D]">
+                  <div className="flex items-center gap-2">
+                    <Folder className="w-5 h-5" />
+                    <input
+                      type="text"
+                      value={newCategoryTitle}
+                      onChange={(e) => setNewCategoryTitle(e.target.value)}
+                      placeholder="Enter category name..."
+                      className="bg-[#0D1117] border border-[#30363D] rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      autoFocus
+                    />
+                    <button
+                      onClick={saveNewCategory}
+                      className="p-1 hover:bg-[#1F2937] rounded-full"
+                    >
+                      <Check className="w-4 h-4 text-green-500" />
+                    </button>
+                    <button
+                      onClick={cancelAddCategory}
+                      className="p-1 hover:bg-[#1F2937] rounded-full"
+                    >
+                      <X className="w-4 h-4 text-red-500" />
+                    </button>
+                  </div>
+                </div>
+              )}
+              
               {categories.map((category) => (
                 <div key={category.id} className="mb-8">
                   <div className="flex items-center gap-2 mb-4">
