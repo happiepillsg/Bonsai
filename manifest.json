@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Bonsai Dashboard",
+  "version": "0.1.0",
+  "description": "A Chrome extension that transforms the new tab experience into a command center for developers and professionals",
+  "permissions": [
+    "bookmarks",
+    "storage",
+    "favicon",
+    "alarms",
+    "tabs",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://api.coingecko.com/*",
+    "https://api.github.com/*",
+    "https://*.ethereum.org/*",
+    "https://*.infura.io/*"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png"
+    },
+    "default_title": "Bonsai Dashboard"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline';"
+  },
+  "web_accessible_resources": [{
+    "resources": ["assets/*"],
+    "matches": ["<all_urls>"]
+  }],
+  "minimum_chrome_version": "88"
+}
+
