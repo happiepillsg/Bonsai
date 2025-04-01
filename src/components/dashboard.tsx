@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Search, Folder } from 'lucide-react';
+import { Search, Folder, Edit2, Check, X } from 'lucide-react';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 
 interface BookmarkNode {
   id: string;
@@ -8,18 +9,20 @@ interface BookmarkNode {
   children?: BookmarkNode[];
   dateAdded?: number;
   parentId?: string;
+  index?: number;
 }
 
 interface Category {
   id: string;
   title: string;
   bookmarks: BookmarkNode[];
+  isEditing?: boolean;
 }
 
 function getFaviconUrl(url: string) {
   try {
     const urlObj = new URL(url);
-    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=32`;
+    return `https://www.google.com/s2/favicons?domain=${urlObj.hostname}&sz=128`;
   } catch {
     return '';
   }
@@ -30,9 +33,14 @@ export function Dashboard() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editingCategory, setEditingCategory] = useState<string | null>(null);
+  const [tempCategoryTitle, setTempCategoryTitle] = useState('');
 
   useEffect(() => {
-    // Get all bookmarks
+    loadBookmarks();
+  }, []);
+
+  const loadBookmarks = () => {
     chrome.bookmarks.getTree((tree) => {
       if (!tree || tree.length === 0) {
         setError('No bookmarks found');
@@ -43,11 +51,8 @@ export function Dashboard() {
       const root = tree[0];
       const allCategories: Category[] = [];
 
-      // Process all children of root
       root.children?.forEach((folder) => {
-        // Add the folder itself as a category if it has items
         if (folder.children && folder.children.length > 0) {
-          // Filter out empty folders and sort bookmarks
           const bookmarks = folder.children.filter(child => child.url || (child.children && child.children.length > 0));
           
           if (bookmarks.length > 0) {
@@ -58,7 +63,6 @@ export function Dashboard() {
             });
           }
 
-          // Process subfolders
           folder.children.forEach((node) => {
             if (!node.url && node.children && node.children.length > 0) {
               const subBookmarks = node.children.filter(child => child.url);
@@ -77,7 +81,7 @@ export function Dashboard() {
       setCategories(allCategories);
       setLoading(false);
     });
-  }, []);
+  };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -88,7 +92,6 @@ export function Dashboard() {
           return;
         }
 
-        // Filter out folders from search results
         const bookmarks = results.filter(result => result.url);
         
         setCategories([{
@@ -98,40 +101,62 @@ export function Dashboard() {
         }]);
       });
     } else {
-      // Reset to show all bookmarks
-      chrome.bookmarks.getTree((tree) => {
-        const root = tree[0];
-        const allCategories: Category[] = [];
-
-        root.children?.forEach((folder) => {
-          if (folder.children && folder.children.length > 0) {
-            const bookmarks = folder.children.filter(child => child.url);
-            if (bookmarks.length > 0) {
-              allCategories.push({
-                id: folder.id,
-                title: folder.title || 'Bookmarks',
-                bookmarks
-              });
-            }
-
-            folder.children.forEach((node) => {
-              if (!node.url && node.children && node.children.length > 0) {
-                const subBookmarks = node.children.filter(child => child.url);
-                if (subBookmarks.length > 0) {
-                  allCategories.push({
-                    id: node.id,
-                    title: node.title,
-                    bookmarks: subBookmarks
-                  });
-                }
-              }
-            });
-          }
-        });
-
-        setCategories(allCategories);
-      });
+      loadBookmarks();
     }
+  };
+
+  const handleDragEnd = (result: any) => {
+    if (!result.destination) return;
+
+    const { source, destination } = result;
+    const sourceDroppableId = source.droppableId;
+    const destDroppableId = destination.droppableId;
+
+    // Make a copy of categories
+    const newCategories = [...categories];
+
+    // Find source and destination category indices
+    const sourceCategoryIndex = newCategories.findIndex(cat => cat.id === sourceDroppableId);
+    const destCategoryIndex = newCategories.findIndex(cat => cat.id === destDroppableId);
+
+    if (sourceCategoryIndex === -1 || destCategoryIndex === -1) return;
+
+    // Get the bookmark being dragged
+    const [movedBookmark] = newCategories[sourceCategoryIndex].bookmarks.splice(source.index, 1);
+
+    // Insert the bookmark at the new position
+    newCategories[destCategoryIndex].bookmarks.splice(destination.index, 0, movedBookmark);
+
+    // Update Chrome bookmarks
+    chrome.bookmarks.move(movedBookmark.id, {
+      parentId: destDroppableId,
+      index: destination.index
+    });
+
+    setCategories(newCategories);
+  };
+
+  const startEditingCategory = (categoryId: string, currentTitle: string) => {
+    setEditingCategory(categoryId);
+    setTempCategoryTitle(currentTitle);
+  };
+
+  const saveEditedCategory = (categoryId: string) => {
+    if (!tempCategoryTitle.trim()) return;
+
+    chrome.bookmarks.update(categoryId, { title: tempCategoryTitle }, () => {
+      setCategories(categories.map(cat => 
+        cat.id === categoryId 
+          ? { ...cat, title: tempCategoryTitle }
+          : cat
+      ));
+      setEditingCategory(null);
+    });
+  };
+
+  const cancelEditingCategory = () => {
+    setEditingCategory(null);
+    setTempCategoryTitle('');
   };
 
   return (
@@ -162,41 +187,94 @@ export function Dashboard() {
             {searchQuery ? 'No bookmarks found for your search' : 'No bookmarks found'}
           </div>
         ) : (
-          <div className="space-y-8">
-            {categories.map((category) => (
-              <div key={category.id} className="mb-8">
-                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                  <Folder className="w-5 h-5" />
-                  {category.title}
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                  {category.bookmarks.map((bookmark) => (
-                    bookmark.url ? (
-                      <a
-                        key={bookmark.id}
-                        href={bookmark.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex flex-col items-center p-4 bg-[#161B22] rounded-lg hover:bg-[#1F2937] transition-colors text-center group"
-                      >
-                        <img 
-                          src={getFaviconUrl(bookmark.url)}
-                          alt=""
-                          className="w-8 h-8 mb-2"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                          }}
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <div className="space-y-8">
+              {categories.map((category) => (
+                <div key={category.id} className="mb-8">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Folder className="w-5 h-5" />
+                    {editingCategory === category.id ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={tempCategoryTitle}
+                          onChange={(e) => setTempCategoryTitle(e.target.value)}
+                          className="bg-[#161B22] border border-[#30363D] rounded px-2 py-1 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          autoFocus
                         />
-                        <div className="text-sm font-medium truncate w-full">
-                          {bookmark.title || new URL(bookmark.url).hostname}
-                        </div>
-                      </a>
-                    ) : null
-                  ))}
+                        <button
+                          onClick={() => saveEditedCategory(category.id)}
+                          className="p-1 hover:bg-[#1F2937] rounded-full"
+                        >
+                          <Check className="w-4 h-4 text-green-500" />
+                        </button>
+                        <button
+                          onClick={cancelEditingCategory}
+                          className="p-1 hover:bg-[#1F2937] rounded-full"
+                        >
+                          <X className="w-4 h-4 text-red-500" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl font-semibold">{category.title}</h2>
+                        <button
+                          onClick={() => startEditingCategory(category.id, category.title)}
+                          className="p-1 hover:bg-[#1F2937] rounded-full"
+                        >
+                          <Edit2 className="w-4 h-4 text-gray-400" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <Droppable droppableId={category.id} direction="horizontal">
+                    {(provided) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                        className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4"
+                      >
+                        {category.bookmarks.map((bookmark, index) => (
+                          bookmark.url ? (
+                            <Draggable key={bookmark.id} draggableId={bookmark.id} index={index}>
+                              {(provided) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                >
+                                  <a
+                                    href={bookmark.url || '#'}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex flex-col items-center p-4 bg-[#161B22] rounded-lg hover:bg-[#1F2937] transition-colors text-center group"
+                                  >
+                                    <img 
+                                      src={bookmark.url ? getFaviconUrl(bookmark.url) : ''}
+                                      alt=""
+                                      className="w-8 h-8 mb-2"
+                                      onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                      }}
+                                    />
+                                    <div className="text-sm font-medium truncate w-full">
+                                      {bookmark.title || (bookmark.url ? new URL(bookmark.url).hostname : 'Unknown')}
+                                    </div>
+                                  </a>
+                                </div>
+                              )}
+                            </Draggable>
+                          ) : null
+                        ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </DragDropContext>
         )}
       </div>
     </div>
