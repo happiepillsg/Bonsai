@@ -172,22 +172,40 @@ export function Dashboard() {
       return;
     }
 
-    chrome.bookmarks.create({
-      title: newCategoryTitle,
-      parentId: '1' // Creates in the "Bookmarks Bar" folder
-    }, (newFolder) => {
-      if (chrome.runtime.lastError) {
-        setError('Failed to create category: ' + chrome.runtime.lastError.message);
+    // Get the Bookmarks Bar folder first
+    chrome.bookmarks.getTree((tree) => {
+      if (!tree || !tree[0].children) {
+        setError('Could not access bookmarks');
         return;
       }
 
-      setCategories([...categories, {
-        id: newFolder.id,
-        title: newFolder.title,
-        bookmarks: []
-      }]);
-      setIsAddingCategory(false);
-      setNewCategoryTitle('');
+      // Find the Bookmarks Bar folder (usually the first child)
+      const bookmarksBar = tree[0].children.find(child => child.title === 'Bookmarks bar');
+      
+      if (!bookmarksBar) {
+        setError('Could not find Bookmarks bar');
+        return;
+      }
+
+      // Create the new folder in the Bookmarks Bar
+      chrome.bookmarks.create({
+        title: newCategoryTitle,
+        parentId: bookmarksBar.id
+      }, (newFolder) => {
+        if (chrome.runtime.lastError) {
+          setError('Failed to create category: ' + chrome.runtime.lastError.message);
+          return;
+        }
+
+        setCategories([...categories, {
+          id: newFolder.id,
+          title: newFolder.title,
+          bookmarks: []
+        }]);
+        setIsAddingCategory(false);
+        setNewCategoryTitle('');
+        setError(null);
+      });
     });
   };
 
